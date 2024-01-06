@@ -1,0 +1,1 @@
+frmt = lambda s, f: f"s{s}-ADL{f}.dat"
