@@ -127,6 +127,7 @@ def cleanse_data(
     for new_lab, old_lab in enumerate(iw.keys()):
         values[values[:, label_idx] == old_lab, label_idx] = new_lab
         new_iw[new_lab] = iw[old_lab]
+
     df = pd.DataFrame(values, columns=columns)
     df = df.interpolate()
     pos = df.isnull().stack()[lambda x: x].index.tolist()
@@ -222,69 +223,6 @@ def get_all_data(
                 )
             data[user][data_num] = df
     return data
-
-
-#     used_columns = ["MILLISEC", "acc_RKN_upper_accX","acc_RKN_upper_accY","acc_RKN_upper_accZ",
-#                     "acc_HIP_accX","acc_HIP_accY","acc_HIP_accZ",
-#                     "acc_LUA_upper_accX","acc_LUA_upper_accY","acc_LUA_upper_accZ",
-#                     "acc_RUA_lower_accX","acc_RUA_lower_accY","acc_RUA_lower_accZ",
-#                     "acc_LH_accX","acc_LH_accY","acc_LH_accZ",
-#                     "acc_BACK_accX","acc_BACK_accY","acc_BACK_accZ",
-#                     "acc_RKN_lower_accX","acc_RKN_lower_accY","acc_RKN_lower_accZ",
-#                     "acc_RWR_accX","acc_RWR_accY","acc_RWR_accZ",
-#                     "acc_RUA_upper_accX","acc_RUA_upper_accY","acc_RUA_upper_accZ",
-#                     "acc_LUA_lower_accX","acc_LUA_lower_accY","acc_LUA_lower_accZ",
-#                     "acc_LWR_accX","acc_LWR_accY","acc_LWR_accZ",
-# #                     "acc_RH_accX","acc_RH_accY","acc_RH_accZ",
-#                     "imu_BACK_accX","imu_BACK_accY","imu_BACK_accZ",
-#                     "imu_BACK_gyroX","imu_BACK_gyroY","imu_BACK_gyroZ",
-#                     "imu_BACK_magneticX","imu_BACK_magneticY","imu_BACK_magneticZ",
-#                     "imu_RUA_accX","imu_RUA_accY","imu_RUA_accZ",
-#                     "imu_RUA_gyroX","imu_RUA_gyroY","imu_RUA_gyroZ",
-#                     "imu_RUA_magneticX","imu_RUA_magneticY","imu_RUA_magneticZ",
-#                     "imu_RLA_accX","imu_RLA_accY","imu_RLA_accZ",
-#                     "imu_RLA_gyroX","imu_RLA_gyroY","imu_RLA_gyroZ",
-#                     "imu_RLA_magneticX","imu_RLA_magneticY","imu_RLA_magneticZ",
-#                     "imu_LUA_accX","imu_LUA_accY","imu_LUA_accZ",
-#                     "imu_LUA_gyroX","imu_LUA_gyroY","imu_LUA_gyroZ",
-#                     "imu_LUA_magneticX","imu_LUA_magneticY","imu_LUA_magneticZ",
-#                     "imu_LLA_accX","imu_LLA_accY","imu_LLA_accZ",
-#                     "imu_LLA_gyroX","imu_LLA_gyroY","imu_LLA_gyroZ",
-#                     "imu_LLA_magneticX","imu_LLA_magneticY","imu_LLA_magneticZ",
-#                     "imu_L-SHOE_EuX","imu_L-SHOE_EuY","imu_L-SHOE_EuZ",
-#                     "imu_L-SHOE_Nav_Ax","imu_L-SHOE_Nav_Ay","imu_L-SHOE_Nav_Az",
-#                     "imu_L-SHOE_Body_Ax","imu_L-SHOE_Body_Ay","imu_L-SHOE_Body_Az",
-#                     "imu_L-SHOE_AngVelBodyFrameX","imu_L-SHOE_AngVelBodyFrameY","imu_L-SHOE_AngVelBodyFrameZ",
-#                     "imu_L-SHOE_AngVelNavFrameX","imu_L-SHOE_AngVelNavFrameY","imu_L-SHOE_AngVelNavFrameZ",
-#                     "imu_R-SHOE_EuX","imu_R-SHOE_EuY","imu_R-SHOE_EuZ",
-#                     "imu_R-SHOE_Nav_Ax","imu_R-SHOE_Nav_Ay","imu_R-SHOE_Nav_Az",
-#                     "imu_R-SHOE_Body_Ax","imu_R-SHOE_Body_Ay","imu_R-SHOE_Body_Az",
-#                     "imu_R-SHOE_AngVelBodyFrameX","imu_R-SHOE_AngVelBodyFrameY","imu_R-SHOE_AngVelBodyFrameZ",
-#                     "imu_R-SHOE_AngVelNavFrameX","imu_R-SHOE_AngVelNavFrameY","imu_R-SHOE_AngVelNavFrameZ",
-#                     "Locomotion",
-#                     "HL_Activity"]
-#     used_data = pd.DataFrame(used_data, columns=used_columns)
-#     logging.debug(f"used data (dataframe shape): {used_data.shape}")
-#     used_data = used_data[used_data['HL_Activity'] != 0]  # Activity conversion data label is 0, discarded
-#     logging.debug(f"after discarding some rows: {used_data.shape}")
-#
-#     used_data['HL_Activity'][used_data['HL_Activity']==101] = 0  # Relaxing
-#     used_data['HL_Activity'][used_data['HL_Activity']==102] = 1  # Coffee time
-#     used_data['HL_Activity'][used_data['HL_Activity']==103] = 2  # Early morning
-#     used_data['HL_Activity'][used_data['HL_Activity']==104] = 3  # Cleanup
-#     used_data['HL_Activity'][used_data['HL_Activity']==105] = 4  # Sandwich time
-#
-#     logging.debug(f"before interpolation: {used_data.shape}")
-#     used_data = used_data.interpolate()
-#     logging.debug(f"after interpolation: {used_data.shape}")
-#
-#     # View the location of Nan data
-#     pos = used_data.isnull().stack()[lambda x:x].index.tolist()
-#     logging.debug(f"View the location of Nan data: {pos}. ")
-#
-#     used_data = used_data.dropna(axis=0)
-#     logging.debug(f"after dropping: {used_data.shape}")
-#     return used_data
 
 
 if __name__ == "__main__":
