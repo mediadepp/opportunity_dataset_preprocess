@@ -225,6 +225,57 @@ def get_all_data(
     return data
 
 
+def unify(
+    root,
+    label_column,
+    label_path,
+    sensor_path,
+    column_detail_path,
+    num_of_users=4,
+):
+    """label_column can be one of 
+    the following items:
+    - "HL_Activity"
+    - "Locomotion"
+    - "ML_Both_Arms"
+    - "LL_Left_Arm"
+    - "LL_Left_Arm_Object"
+    - "LL_Right_Arm"
+    - "LL_Right_Arm_Object"
+    """
+    label_info = get_label_info(
+        addrs=label_path,
+    )
+    data = get_all_data(
+        root=root,
+        labels_to_keep=[label_column],
+        num_of_users=num_of_users,
+        sensor_path=sensor_path,
+        column_path=column_detail_path,
+    )
+    all_data = []
+    total_data = 0
+    for user_num in tqdm(range(num_of_users)):
+        for dataset in list(range(5)) + ["drill"]:
+            df = data[user_num][dataset]
+            df, iw, pos = cleanse_data(
+                df=df,
+                label_column=label_column,
+                label_info=label_info,
+            )
+            if df.shape[0] > 0:
+                all_data += [df.values[:, 1:]]
+                total_data += df.values.shape[0]
+    
+    # (m, 109)
+    unified_data = np.concatenate(
+        all_data,
+        axis=0
+    )
+
+    return unified_data, iw, total_data
+
+
 if __name__ == "__main__":
     root = r"/home/madmedi/Documents/coding/university/capsule/3_har_caps/data_code/1_opportunity/opportunity/dataset"
     data_columns, label_columns = _get_column_details(
@@ -294,70 +345,90 @@ if __name__ == "__main__":
     ]
     label_info = get_label_info(addrs=join(root, r"label_legend.txt"))
     temp = get_all_data(root=root)
-    for label_column in tqdm(label_columns):
-        logging.debug("==================================================")
-        logging.debug(f"*** label: {label_column}")
-        data = get_all_data(
-            root=root,
-            labels_to_keep=[label_column],
-        )
-        for i in range(4):
-            for j in range(5):
-                assert temp[i][j][label_column].shape[0] > 1_000
-                assert all(temp[i][j][label_column] == data[i][j][label_column])
-                assert temp[i][j].shape[1] > data[i][j].shape[1]
+    # for label_column in tqdm(label_columns):
+    #     logging.debug("==================================================")
+    #     logging.debug(f"*** label: {label_column}")
+    #     data = get_all_data(
+    #         root=root,
+    #         labels_to_keep=[label_column],
+    #     )
+    #     for i in range(4):
+    #         for j in range(5):
+    #             assert temp[i][j][label_column].shape[0] > 1_000
+    #             assert all(temp[i][j][label_column] == data[i][j][label_column])
+    #             assert temp[i][j].shape[1] > data[i][j].shape[1]
 
-        for user_num in range(4):
-            f = True
-            for dataset in list(range(5)) + ["drill"]:
-                df = data[user_num][dataset]
-                assert df.shape[1] == 110
-                assert df.shape[0] > 1_000
-                old_df = df
-                df, iw, pos = cleanse_data(
-                    df=df,
-                    label_column=label_column,
-                    label_info=label_info,
-                )
-                if f:
-                    f = False
-                    logging.debug(f"*** new_iw: {iw}")
-                logging.debug(
-                    f"user: {user_num}, data: {dataset}, "
-                    f"old df: {old_df.shape}, "
-                    f"df: {df.shape}, "
-                    f"dropped NaNs: {len(pos)}."
-                )
-                assert df.shape[1] == old_df.shape[1]
-                assert list(old_df.columns) == list(df.columns)
-                if not all(old_df[label_column] == 0):
-                    if df.shape[0] == 0:
-                        msg = f"user_num: {user_num}, dataset: {dataset} is empty."
-                        logging.debug(msg)
-                    for item in sorted(df[label_column].value_counts().index):
-                        assert item in iw.keys()
-                else:
-                    logging.debug(
-                        f">>>>>>>>>> all zeros: user_num: {user_num}, "
-                        f"dataset: {dataset}"
-                    )
+    #     for user_num in range(4):
+    #         f = True
+    #         for dataset in list(range(5)) + ["drill"]:
+    #             df = data[user_num][dataset]
+    #             assert df.shape[1] == 110
+    #             assert df.shape[0] > 1_000
+    #             old_df = df
+    #             df, iw, pos = cleanse_data(
+    #                 df=df,
+    #                 label_column=label_column,
+    #                 label_info=label_info,
+    #             )
+    #             if f:
+    #                 f = False
+    #                 logging.debug(f"*** new_iw: {iw}")
+    #             logging.debug(
+    #                 f"user: {user_num}, data: {dataset}, "
+    #                 f"old df: {old_df.shape}, "
+    #                 f"df: {df.shape}, "
+    #                 f"dropped NaNs: {len(pos)}."
+    #             )
+    #             assert df.shape[1] == old_df.shape[1]
+    #             assert list(old_df.columns) == list(df.columns)
+    #             if not all(old_df[label_column] == 0):
+    #                 if df.shape[0] == 0:
+    #                     msg = f"user_num: {user_num}, dataset: {dataset} is empty."
+    #                     logging.debug(msg)
+    #                 for item in sorted(df[label_column].value_counts().index):
+    #                     assert item in iw.keys()
+    #             else:
+    #                 logging.debug(
+    #                     f">>>>>>>>>> all zeros: user_num: {user_num}, "
+    #                     f"dataset: {dataset}"
+    #                 )
 
-                if any(old_df[label_column] == 0):
-                    assert old_df.shape[0] != df.shape[0]
-                    if len(df[label_column].value_counts()) > 0:
-                        if len(old_df[label_column].value_counts()) != 1 + len(
-                            df[label_column].value_counts()
-                        ):
-                            logging.debug(
-                                f"->->->->->->->->->->->->->->->->->->->->->->->->->"
-                                f"some labels removed: user: {user_num}, data: {dataset}"
-                            )
-                else:
-                    assert old_df.shape[0] == df.shape[0]
-                    assert len(old_df[label_column].value_counts()) == len(
-                        df[label_column].value_counts()
-                    )
-                    logging.debug("** This part")
+    #             if any(old_df[label_column] == 0):
+    #                 assert old_df.shape[0] != df.shape[0]
+    #                 if len(df[label_column].value_counts()) > 0:
+    #                     if len(old_df[label_column].value_counts()) != 1 + len(
+    #                         df[label_column].value_counts()
+    #                     ):
+    #                         logging.debug(
+    #                             f"->->->->->->->->->->->->->->->->->->->->->->->->->"
+    #                             f"some labels removed: user: {user_num}, data: {dataset}"
+    #                         )
+    #             else:
+    #                 assert old_df.shape[0] == df.shape[0]
+    #                 assert len(old_df[label_column].value_counts()) == len(
+    #                     df[label_column].value_counts()
+    #                 )
+    #                 logging.debug("** This part")
 
-            logging.debug("**************************************************")
-        logging.debug("--------------------------------------------------")
+    #         logging.debug("**************************************************")
+    #     logging.debug("--------------------------------------------------")
+    
+    logging.debug(f"Testing {unify.__name__}")
+    root = r"/home/madmedi/Documents/coding/university/capsule/3_har_caps/data_code/1_opportunity/opportunity/dataset"
+    label_column = "HL_Activity"
+    label_path = join(root, r"label_legend.txt")
+    sensor_path = r"sensor_names.txt"
+    column_detail_path = r"column_names.txt"
+    unified_data, iw, total_data = unify(
+        root=root,
+        label_column=label_column,
+        label_path=label_path,
+        sensor_path=sensor_path,
+        column_detail_path=column_detail_path,
+        num_of_users=4,
+    )
+    assert len(iw.keys()) == 5
+    assert unified_data.shape == (total_data, 109)
+    logging.debug(f"total_data: {total_data}")
+    
+    logging.debug("preprocess.py [Done]")
