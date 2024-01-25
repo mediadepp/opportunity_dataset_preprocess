@@ -2,10 +2,13 @@
 
 from collections import defaultdict
 import logging
+import math
 import numpy as np
 import os
 import pandas as pd
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from tqdm import tqdm
+import windower
 
 join = os.path.join
 logging.basicConfig(
@@ -44,7 +47,7 @@ def _columns_to_keep(data_columns, label_columns):
 
     for column in data_columns[1:]:
         result += [int(column[1]) - 1]
-        names += [f"{column[-2]} - {column[-1]}"]
+        names += [f"{column[-3]} - {column[-2]} - {column[-1]}"]
 
     for label in label_columns:
         result += [int(label[0]) - 1]
@@ -112,7 +115,7 @@ def _drop_labels(df, all_labels, labels_to_keep):
     return df
 
 
-def cleanse_data(
+def _cleanse_data(
     df,
     label_column,
     label_info,
@@ -136,7 +139,7 @@ def cleanse_data(
     return df, new_iw, pos
 
 
-def get_label_info(
+def _get_label_info(
     addrs,
 ):
     data = []
@@ -163,7 +166,7 @@ def _get_data(
     return raw_data
 
 
-def get_all_data(
+def _get_all_data(
     root,
     labels_to_keep=None,
     num_of_users=4,
@@ -225,7 +228,7 @@ def get_all_data(
     return data
 
 
-def unify(
+def _unify(
     root,
     label_column,
     label_path,
@@ -233,7 +236,7 @@ def unify(
     column_detail_path,
     num_of_users=4,
 ):
-    """label_column can be one of 
+    """label_column can be one of
     the following items:
     - "HL_Activity"
     - "Locomotion"
@@ -243,10 +246,10 @@ def unify(
     - "LL_Right_Arm"
     - "LL_Right_Arm_Object"
     """
-    label_info = get_label_info(
+    label_info = _get_label_info(
         addrs=label_path,
     )
-    data = get_all_data(
+    data = _get_all_data(
         root=root,
         labels_to_keep=[label_column],
         num_of_users=num_of_users,
@@ -258,7 +261,7 @@ def unify(
     for user_num in tqdm(range(num_of_users)):
         for dataset in list(range(5)) + ["drill"]:
             df = data[user_num][dataset]
-            df, iw, pos = cleanse_data(
+            df, iw, pos = _cleanse_data(
                 df=df,
                 label_column=label_column,
                 label_info=label_info,
@@ -266,14 +269,103 @@ def unify(
             if df.shape[0] > 0:
                 all_data += [df.values[:, 1:]]
                 total_data += df.values.shape[0]
-    
+
     # (m, 109)
-    unified_data = np.concatenate(
-        all_data,
-        axis=0
+    unified_data = np.concatenate(all_data, axis=0)
+
+    return unified_data, iw, total_data, df.columns
+
+
+def load_data(
+    root,
+    label_column,
+    label_path,
+    sensor_path,
+    column_detail_path,
+    frequency=32,
+    sampling_time=3,
+    hop_size=30,
+    seed=1,
+    test_val_size=0.15,
+):
+    unified_data, iw, total_data, columns = _unify(
+        root=root,
+        label_column=label_column,
+        label_path=label_path,
+        sensor_path=sensor_path,
+        column_detail_path=column_detail_path,
+        num_of_users=4,
+    )
+    x_total, y_total = _make_frames(
+        data=unified_data,
+        columns=columns[1:],
+        frequency=frequency,
+        sampling_time=sampling_time,
+        hop_size=hop_size,
+    )
+    (x_train, y_train), (x_tmp, y_tmp) = windower.shuffle_data(
+        x=x_total,
+        y=y_total,
+        seed=seed,
+        test_size=test_val_size * 2,
+    )
+    (x_val, y_val), (x_test, y_test) = windower.shuffle_data(
+        x=x_tmp,
+        y=y_tmp,
+        seed=seed,
+        test_size=0.5,
     )
 
-    return unified_data, iw, total_data
+    return (x_train, y_train), (x_val, y_val), (x_test, y_test), iw
+
+
+def _make_frames(
+    data,
+    columns,
+    frequency=32,
+    sampling_time=3,
+    hop_size=30,
+):
+    """The multiplication
+    of frequency and sampling_time
+    will be used as the length of each window.
+    The values provided as the default arguments
+    are not exact, but the goal is just the multiplication
+    of the mentioned arguments.
+    """
+    df = windower.make_dataframe(
+        data=data,
+        columns=columns,
+    )
+    types = ["float32"] * df.shape[1]
+    assert len(types) == len(columns)
+    # data type fixer:
+    df, _ = windower.make_df_ready(
+        df=df,
+        cols=columns,
+        types=types,
+        label_column=None,
+        new_label_column_title=None,
+    )
+    x = df[columns[:-1]]
+    y = df[columns[-1:]]
+    normalizer = StandardScaler()
+    normalized_x = normalizer.fit_transform(X=x)
+    normalized_x = pd.DataFrame(data=normalized_x, columns=columns[:-1])
+    normalized_x[columns[-1]] = y
+    normalized_df = normalized_x
+    frame_size = sampling_time * frequency
+    frames, labels = windower.frame_preparation(
+        df=normalized_df,
+        frame_size=frame_size,
+        hop_size=hop_size,
+        data_columns=columns[:-1],
+        label_column=columns[-1],
+    )
+    labels = labels.astype("int32")
+    x_total, y_total = frames, labels
+
+    return x_total, y_total
 
 
 if __name__ == "__main__":
@@ -343,12 +435,12 @@ if __name__ == "__main__":
         "LL_Right_Arm",
         "LL_Right_Arm_Object",
     ]
-    label_info = get_label_info(addrs=join(root, r"label_legend.txt"))
-    temp = get_all_data(root=root)
+    label_info = _get_label_info(addrs=join(root, r"label_legend.txt"))
+    temp = _get_all_data(root=root)
     for label_column in tqdm(label_columns):
         logging.debug("==================================================")
         logging.debug(f"*** label: {label_column}")
-        data = get_all_data(
+        data = _get_all_data(
             root=root,
             labels_to_keep=[label_column],
         )
@@ -365,7 +457,7 @@ if __name__ == "__main__":
                 assert df.shape[1] == 110
                 assert df.shape[0] > 1_000
                 old_df = df
-                df, iw, pos = cleanse_data(
+                df, iw, pos = _cleanse_data(
                     df=df,
                     label_column=label_column,
                     label_info=label_info,
@@ -412,14 +504,14 @@ if __name__ == "__main__":
 
             logging.debug("**************************************************")
         logging.debug("--------------------------------------------------")
-    
-    logging.debug(f"Testing {unify.__name__}")
+
+    logging.debug(f"Testing {_unify.__name__}")
     root = r"/home/madmedi/Documents/coding/university/capsule/3_har_caps/data_code/1_opportunity/opportunity/dataset"
     label_column = "HL_Activity"
     label_path = join(root, r"label_legend.txt")
     sensor_path = r"sensor_names.txt"
     column_detail_path = r"column_names.txt"
-    unified_data, iw, total_data = unify(
+    unified_data, iw, total_data, columns = _unify(
         root=root,
         label_column=label_column,
         label_path=label_path,
@@ -429,6 +521,65 @@ if __name__ == "__main__":
     )
     assert len(iw.keys()) == 5
     assert unified_data.shape == (total_data, 109)
+    assert len(columns) == 110
     logging.debug(f"total_data: {total_data}")
-    
+
+    logging.debug(f"Testing `{_make_frames.__name__}`")
+    columns = columns[1:]
+    frequency = 32
+    sampling_time = 3
+    hop_size = 30
+    x_total, y_total = _make_frames(
+        data=unified_data,
+        columns=columns,
+        frequency=frequency,
+        sampling_time=sampling_time,
+        hop_size=hop_size,
+    )
+    assert type(x_total) == np.ndarray
+    assert type(y_total) == np.ndarray
+    bs = x_total.shape[0]
+    assert x_total.shape[1:] == (frequency * sampling_time, 108)
+    assert y_total.shape == (bs,)
+    assert len(set(y_total.ravel())) == 5
+    assert type(y_total[0]) == np.int32
+    logging.debug(f"batch size: {bs}")
+
+    logging.debug(f"Testing `{load_data.__name__}`")
+    for label_column in label_columns:
+        unified_data, _, _, _ = _unify(
+            root=root,
+            label_column=label_column,
+            label_path=label_path,
+            sensor_path=sensor_path,
+            column_detail_path=column_detail_path,
+            num_of_users=4,
+        )
+        x_total, _ = _make_frames(
+            data=unified_data,
+            columns=columns,
+            frequency=frequency,
+            sampling_time=sampling_time,
+            hop_size=hop_size,
+        )
+        bs = x_total.shape[0]
+        (x_train, y_train), (x_val, y_val), (x_test, y_test), iw = load_data(
+            root=root,
+            label_column=label_column,
+            label_path=label_path,
+            sensor_path=sensor_path,
+            column_detail_path=column_detail_path,
+            frequency=frequency,
+            sampling_time=sampling_time,
+            hop_size=hop_size,
+        )
+        assert x_train.shape[0] - math.floor(bs * 0.7) <= 1
+        assert x_val.shape[0] - math.floor(bs * 0.15) <= 1
+        assert x_test.shape[0] - math.floor(bs * 0.15) <= 1
+        logging.debug(
+            f"label column: {label_column}, labels: {iw}, "
+            f"train: {x_train.shape[0]}, "
+            f"val: {x_val.shape[0]}, test: {x_test.shape[0]}"
+        )
+
     logging.debug("preprocess.py [Done]")
